@@ -1,0 +1,143 @@
+<html>
+<head>
+  <title>MQTT Config</title>
+  <script type="text/javascript">
+  document.addEventListener("DOMContentLoaded", function() {
+    document.querySelectorAll('form[data-settings-path]').forEach(function(form){
+      disable(form);
+      getJson(form.getAttribute('data-settings-path'), function(err, data){
+        if(err){
+          console.log(err);
+        }else{
+          for(var i in data){
+            if(typeof form[i] == 'undefined') continue;
+            switch(form[i].type){
+              case 'checkbox':
+              form[i].checked = form[i].value == data[i];
+              break;
+              default:
+              form[i].value = data[i];
+            }
+          }
+          enable(form);
+        }
+      });
+      var form = document.querySelector('form');
+      // form.addEventListener("submit", function(evt) {
+      //   evt.preventDefault();
+      //   disable(form);
+      //   postForm(form, function(err){
+      //     if(err){
+      //       console.log(err);
+      //     }else{
+      //       console.log('Post successful!');
+      //     }
+      //     enable(form);
+      //   });
+      // }, true);
+    });
+  });
+
+  function disable(form){
+    form.querySelectorAll('[name], [type=submit]').forEach(function(el){
+      el.setAttribute('disabled', 'disabled');
+    });
+  }
+
+  function enable(form){
+    form.querySelectorAll('[name], [type=submit]').forEach(function(el){
+      el.removeAttribute('disabled');
+    });
+  }
+
+  function getJson(url, cb){
+    var xhr = new XMLHttpRequest();
+    xhr.open('GET', url);
+    xhr.onreadystatechange = function () {
+      if(xhr.readyState === xhr.DONE) {
+        if(xhr.status === 200){
+          var data;
+          try{
+            data = JSON.parse(xhr.responseText);
+            cb(null, data);
+          }catch(e){
+            cb({message: 'Failed to parse JSON', data: xhr.responseText});
+          }
+        }else{
+          cb({message: 'Failed to fetch the data!', data: "Request returned a non 200 response of "+xhr.status});
+        }
+      }
+    };
+    xhr.send();
+  }
+
+  function postForm(form, cb){
+    var formData = {};
+    form.querySelectorAll('[name]').forEach(function(el){
+      switch(el.type){
+        case 'checkbox':
+        if(el.checked) formData[el.name] = el.value;
+        break;
+        default:
+        formData[el.name] = el.value;
+      }
+    });
+    var xhr = new XMLHttpRequest();
+    xhr.open(form.method, form.action);
+    xhr.setRequestHeader( 'Content-Type', form.enctype );
+
+    if(typeof cb != 'undefined'){
+      xhr.onreadystatechange = function () {
+        if(xhr.readyState === xhr.DONE) {
+          if(xhr.status === 200){
+            cb(null);
+          }else{
+            cb({message: 'Failed to fetch the data!', data: "Request returned a non 200 response of "+xhr.status});
+          }
+        }
+      };
+    }
+
+    xhr.send(JSON.stringify(formData) );
+  }
+  </script>
+</head>
+<form action="/update" data-settings-path="/loadSettings" method="post" enctype="multipart/form-data">
+  SSID:<br>
+  <input type="text" name="SSID" /><br>
+  Pass Phrase<br>
+  <input type="password" name="PASS" /><br><br>
+  Node ID<br>
+  <input type="text" name="NODEID" /><br><br>
+  Interval(in seconds)<br>
+  <input type="text" name="INTERVAL" /><br><br>
+  HTTP Enabled <input type="checkbox" name="HTTPENABLED" value="1"/><br><br>
+  UDP Enabled <input type="checkbox" name="UDPENABLED" value="1"/><br><br>
+  UDP Broadcast Port<br>
+  <input type="text" name="UDPPORT" /><br><br>
+  TCP Remote Connection <input type="checkbox" name="TCPENABLED" value="1"/><br><br>
+  TCP Remote Server Port<br>
+  <input type="text" name="TCPPORT" /><br><br>
+  TCP Remote Server Address<br>
+  <input type="text" name="TCPADDRESS" /><br><br>
+  TCP Remote Response Timeout(ms)<br>
+  <input type="text" name="TCPTIMEOUT" /><br><br>
+  Accept TCP connections <input type="checkbox" name="TCPLISTENENABLED" value="1"/><br><br>
+  TCP Listen Port<br>
+  <input type="text" name="TCPLISTENPORT" /><br><br>
+  MQTT Enabled <input type="checkbox" name ="MQTTENABLED" value="1"/><br><br>
+  MQTT Host<br>
+  <input type="text" name="MQTTHOST" /><br><br>
+  MQTT Port<br>
+  <input type="text" name="MQTTPORT" /><br><br>
+  MQTT Username<br>
+  <input type="text" name="MQTTUSERNAME" /><br><br>
+  MQTT Password<br>
+  <input type="password" name="MQTTPASSWORD" /><br><br>
+  Temperature Topic<br>
+  <input type="text" name="MQTTTEMPERATURETOPIC" /><br><br>
+  Humidity Topic<br>
+  <input type="text" name="MQTTHUMIDITYTOPIC" /><br><br>
+  <input type="submit" value="Save Settings" />
+</form>
+</html>

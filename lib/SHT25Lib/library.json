@@ -1,0 +1,21 @@
+{
+"name": "SHT25",
+"keywords": "SHT25",
+"description": "Arduino library for SHT25",
+"downloadUrl": "",
+"authors":
+[
+{
+"name": "SHT25",
+"email": "info@freertos.org"
+}
+],
+"build":
+{
+"flags" : "-Isrc/include -Isrc/portable/GCC/ARM_CM4F/ -I../../src/config/"
+},
+"dependencies": {   },
+"version": "1.0.0",
+"frameworks": "stm32cube",
+"platforms": "*"
+}
