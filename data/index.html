@@ -1,0 +1,73 @@
+<html>
+<head>
+<script type="text/javascript">
+	function getJson(url, cb){
+		var xhr = new XMLHttpRequest();
+		xhr.open('GET', url);
+		xhr.onreadystatechange = function () {
+			if(xhr.readyState === xhr.DONE) {
+				if(xhr.status === 200){
+					var data;
+					try{
+						data = JSON.parse(xhr.responseText);
+						cb(null, data);
+					}catch(e){
+						cb({message: 'Failed to parse JSON', data: xhr.responseText});
+					}
+				}else{
+					cb({message: 'Failed to fetch the data!', data: "Request returned a non 200 response of "+xhr.status});
+				}
+			}
+		};
+		xhr.send();
+	}
+	document.addEventListener("DOMContentLoaded", function(){
+		console.log('DOMContentLoaded');
+		fetchSensorData();
+	});
+
+	function fetchSensorData(){
+		getJson('/read', function(err, data){
+			if(err){
+				var container = fetchSensorData('#container');
+				fetchSensorData('#loading-message').innerText = "Failed to load sensor data, trying again...";
+				if(container.classList.contains('loaded')){
+					container.classList.remove('loaded');
+				}
+			}else{
+				fetchSensorData('#temperature').innerText = data.temperature;
+				fetchSensorData('#humidity').innerText = data.humidity;
+				if(!container.classList.contains('loaded')){
+					container.classList.add('loaded');
+				}
+			}
+			//setTimeout(fetchSensorData, 1000);
+		});
+
+	}
+</script>
+<style>
+	.reading-wrapper{
+		display: none;
+	}
+	#container.loaded .reading-wrapper{
+		display: block;
+	}
+	#container.loaded #loading-message{
+		display: none;
+	}
+</style>
+</head>
+<body>
+	<div id="container">
+		<div id="loading-message">
+			Fetching sensor data...
+		</div>
+		<div class="reading-wrapper">
+			<span class="label">Temperature: </span><span id="temperature"></span>
+		</div>
+		<div class="reading-wrapper">
+			<span class="label">Humidity: </span><span id="humidity"></span>
+		</div>
+	</div>
+</body>
