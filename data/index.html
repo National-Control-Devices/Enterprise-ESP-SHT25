@@ -3,24 +3,25 @@
 <script type="text/javascript">
 	function getJson(url, cb){
 		var xhr = new XMLHttpRequest();
-		xhr.open('GET', url);
-		xhr.onreadystatechange = function () {
-			if(xhr.readyState === xhr.DONE) {
-				if(xhr.status === 200){
-					var data;
-					try{
-						data = JSON.parse(xhr.responseText);
-						cb(null, data);
-					}catch(e){
-						cb({message: 'Failed to parse JSON', data: xhr.responseText});
-					}
-				}else{
-					cb({message: 'Failed to fetch the data!', data: "Request returned a non 200 response of "+xhr.status});
-				}
+		xhr.addEventListener("load", function(){
+			console.log('load');
+			try{
+				data = JSON.parse(xhr.responseText);
+				cb(null, data);
+			}catch(e){
+				cb({message: 'Failed to parse JSON', data: xhr.responseText});
 			}
-		};
+		});
+		xhr.addEventListener("error", function(){
+			console.log('error');
+			cb({message: "Ran into a problem.", data: xhr.status});
+			xhr.abort();
+		});
+
+		xhr.open('GET', url);
 		xhr.send();
 	}
+
 	document.addEventListener("DOMContentLoaded", function(){
 		console.log('DOMContentLoaded');
 		fetchSensorData();
@@ -29,21 +30,21 @@
 	function fetchSensorData(){
 		getJson('/read', function(err, data){
 			if(err){
-				var container = fetchSensorData('#container');
-				fetchSensorData('#loading-message').innerText = "Failed to load sensor data, trying again...";
+				console.log(err);
+				var container = document.querySelector('#container');
+				document.querySelector('#loading-message').innerText = "Failed to load sensor data, trying again...";
 				if(container.classList.contains('loaded')){
 					container.classList.remove('loaded');
 				}
 			}else{
-				fetchSensorData('#temperature').innerText = data.temperature;
-				fetchSensorData('#humidity').innerText = data.humidity;
+				document.querySelector('#temperature').innerText = data.temperature;
+				document.querySelector('#humidity').innerText = data.humidity;
 				if(!container.classList.contains('loaded')){
 					container.classList.add('loaded');
 				}
 			}
-			//setTimeout(fetchSensorData, 1000);
+			setTimeout(fetchSensorData, 1000);
 		});
-
 	}
 </script>
 <style>
