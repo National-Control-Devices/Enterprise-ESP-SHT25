@@ -11,8 +11,10 @@
 #include <WiFiUdp.h>
 #include <ArduinoJson.h>
 #include <PubSubClient.h>
+#include <esp_wifi.h>
+#include <HIH7120.h>
 
-SHT25 sensor;
+HIH7120 sensor;
 
 int firmwareVersion = 1;
 int nodeID = 0;
@@ -122,7 +124,6 @@ void processInterval();
 void setup(){
   Serial.begin(115200);
   EEPROM.begin(1024);
-  sensor.init();
   loadSettings();
   pinMode(button, INPUT_PULLUP);
   if(!SPIFFS.begin(true)){
@@ -136,40 +137,60 @@ void setup(){
     setupMode = true;
     Serial.println("Setup Mode");
 
-
   }else{
-    Serial.println("Run Mode");
-    Serial.printf("Connecting to %s with password %s\n", ssid, ssidPass);
-    WiFi.begin(ssid, ssidPass);
-    Serial.print("Connecting to WiFi");
-    while(WiFi.status() != WL_CONNECTED){
-      Serial.print(".");
-      delay(500);
-    }
-    Serial.println();
-    Serial.print("WiFi Connected to: ");
-    Serial.println(ssid);
-    Serial.println(WiFi.localIP());
-    broadcastIP = WiFi.gatewayIP();
-    broadcastIP[3] = 255;
-    macAddress = WiFi.macAddress();
-    moduleIP = WiFi.localIP();
-    sprintf(moduleIPString, "%i.%i.%i.%i", moduleIP[0], moduleIP[1], moduleIP[2], moduleIP[3]);
-    if(mqttEnabled){
-      mqttClient.setServer(mqttHost, mqttPort);
-    }
-    if(serverEnabled){
-      tcpServer = WiFiServer(serverPort);
-      tcpServer.begin();
-    }
-    if(httpServerEnabled && !setupMode){
-      server.onNotFound(onRequest);
-      server.begin();
+    if(udpEnabled || mqttEnabled || tcpEnabled || serverEnabled){
+      Serial.println("Run Mode");
+      Serial.printf("Connecting to %s with password %s\n", ssid, ssidPass);
+      WiFi.begin(ssid, ssidPass);
+      Serial.print("Connecting to WiFi");
+      unsigned long wifiConnectTimeout = 10000;
+      unsigned long startConnectTime = millis();
+      while(WiFi.status() != WL_CONNECTED && millis() < startConnectTime+wifiConnectTimeout){
+        Serial.print(".");
+        delay(500);
+      }
+      if(WiFi.status() == WL_CONNECTED){
+        Serial.println();
+        Serial.print("WiFi Connected to: ");
+        Serial.println(ssid);
+        Serial.println(WiFi.localIP());
+        broadcastIP = WiFi.gatewayIP();
+        broadcastIP[3] = 255;
+        macAddress = WiFi.macAddress();
+        moduleIP = WiFi.localIP();
+        sprintf(moduleIPString, "%i.%i.%i.%i", moduleIP[0], moduleIP[1], moduleIP[2], moduleIP[3]);
+        if(mqttEnabled){
+          mqttClient.setServer(mqttHost, mqttPort);
+        }
+        if(serverEnabled){
+          tcpServer = WiFiServer(serverPort);
+          tcpServer.begin();
+        }
+        if(httpServerEnabled && !setupMode){
+          server.onNotFound(onRequest);
+          server.begin();
+        }
+      }else{
+        Serial.println("WiFi Connect failed");
+      }
+
+    }else{
+      Serial.println("Serial only mode");
     }
   }
 }
 
 void loop(){
+  if(Serial.available() != 0){
+    delay(50);
+    int serialLen = Serial.available();
+    char serialData[serialLen];
+    for(int i = 0; i < serialLen; i++){
+      serialData[i] = Serial.read();
+    }
+    storeSettings(String(serialData), false);
+  }
+
   if(setupMode && boot){
     server.on("/update", HTTP_POST, configUpdate, NULL, handleBody);
     server.onNotFound(onRequest);
@@ -179,19 +200,10 @@ void loop(){
   if(setupMode){
     dnsServer.processNextRequest();
   }else{
-    if(Serial.available() != 0){
-      delay(50);
-      int serialLen = Serial.available();
-      char serialData[serialLen];
-      for(int i = 0; i < serialLen; i++){
-        serialData[i] = Serial.read();
-      }
-      storeSettings(String(serialData), false);
-    }
-
-    if(millis() > lastSensorReading + sensorInterval){
+    if(millis() > lastSensorReading + sensorInterval || boot){
       lastSensorReading = millis();
       processInterval();
+      boot = false;
     }
   }
 }
@@ -272,6 +284,7 @@ void loadSettings(){
 void onRequest(AsyncWebServerRequest *request){
   //Handle Unknown Request
 
+
   Serial.printf("params: %i\n",request->params());
   Serial.println(request->url());
   Serial.println("onRequest fired");
@@ -307,10 +320,11 @@ void onRequest(AsyncWebServerRequest *request){
     return;
   }
   if(request->url() == "/read"){
+    sensor.update();
     StaticJsonBuffer<200> jsonBuffer;
     JsonObject &root = jsonBuffer.createObject();
-    root["temperature"] = sensor.readTemp('f');
-    root["humidity"] = sensor.readHumidity();
+    root["temperature"] = sensor.fTemp;
+    root["humidity"] = sensor.humidity;
     String sensorDataString;
     root.printTo(sensorDataString);
     request->send(200, "text/plain", sensorDataString);
@@ -323,6 +337,9 @@ void onRequest(AsyncWebServerRequest *request){
     request->send(SPIFFS, "/Config.html");
     return;
   }else{
+    if(request->url() == "/"){
+      request->send(SPIFFS, "/index.html");
+    }
     if(request->url() == "/Config"){
       request->send(SPIFFS, "/Config.html");
       return;
@@ -474,13 +491,18 @@ void storeSettings(String s, bool forceReset){
 }
 
 void processInterval(){
-  double tempReading = sensor.readTemp('f');
-  double humReading = sensor.readHumidity();
+  sensor.update();
+  double tempReading = sensor.fTemp;
+  double humReading = sensor.humidity;
 
   double tempDiff = tempReading > previousTempReading ? tempReading - previousTempReading : previousTempReading - tempReading;
   double humDiff = humReading > previousHumReading ? humReading - previousHumReading : previousHumReading - humReading;
 
   if(tempDiff > tempChangeLimit || humDiff > humChangeLimit || forceOnInterval){
+
+    previousTempReading = tempReading;
+    previousHumReading = humReading;
+
     counter++;
     packetType = "sensor_data";
 
@@ -521,6 +543,34 @@ void processInterval(){
 
     root.prettyPrintTo(sensorDataString);
     Serial.println(sensorDataString);
+
+    if(udpEnabled || mqttEnabled || tcpEnabled || serverEnabled){
+      if(!WiFi.isConnected()){
+        unsigned long wifiConnectTimeout = 10000;
+        unsigned long startConnectTime = millis();
+        WiFi.begin(ssid, ssidPass);
+        Serial.print("Connecting to WiFi");
+        while(WiFi.status() != WL_CONNECTED && millis() < startConnectTime+wifiConnectTimeout){
+          Serial.print(".");
+          delay(500);
+        }
+        if(WiFi.status() != WL_CONNECTED){
+          Serial.println("WiFi reconnect failed");
+          return;
+        }
+        Serial.println();
+        Serial.print("WiFi Reconnected to: ");
+        Serial.print(ssid);
+        Serial.printf(" after %i milliseconds.\n", millis()-startConnectTime);
+        Serial.println(WiFi.localIP());
+      }
+    }else{
+      //No need to do anything over WiFi, we are only outputing readings and data over usb.
+      if(WiFi.isConnected()){
+        WiFi.disconnect(true);
+      }
+      return;
+    }
 
     //UDP broadcast
     if(WiFi.isConnected() && udpEnabled){
@@ -599,8 +649,5 @@ void processInterval(){
       }
     }
 
-
-    previousTempReading = tempReading;
-    previousHumReading = humReading;
   }
 }
